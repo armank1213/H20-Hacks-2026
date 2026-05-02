@@ -1,116 +1,53 @@
 import SwiftUI
 import MapKit
 
-// 1. Simple model to store recent locations in AppStorage
+// MARK: - Recent Location Model
+
 struct RecentLocation: Identifiable, Codable, Equatable {
     var id = UUID()
     let name: String
     let title: String
     let latitude: Double
     let longitude: Double
-    
+
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 }
 
+// MARK: - Home Map View
+
 struct HomeMapView: View {
-    let californiaCenter = CLLocationCoordinate2D(latitude: 37.166, longitude: -119.449)
-    let californiaZoomLevel: Double = 4_500_000
-    
-    @State private var position: MapCameraPosition = .camera(
-        MapCamera(centerCoordinate: CLLocationCoordinate2D(latitude: 37.166, longitude: -119.449), distance: 4_500_000)
-    )
-    
+    @Binding var position: MapCameraPosition
+
+    // Restrict panning to a region that covers California with some breathing room
     @State private var mapBounds = MapCameraBounds(
+        centerCoordinateBounds: MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.166, longitude: -119.449),
+            span: MKCoordinateSpan(latitudeDelta: 12.0, longitudeDelta: 14.0)
+        ),
         minimumDistance: 1_000,
         maximumDistance: 6_000_000
     )
-    
-    @State private var showingLocationPicker = false
-    @State private var locationSearch: String = ""
-    
+
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // 1. Hybrid Map Layer
-            Map(position: $position, bounds: mapBounds)
-                .mapStyle(.hybrid(elevation: .realistic))
-                .edgesIgnoringSafeArea(.all)
-            
-            // 2. Glass UI Bottom Overlay
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    // Reset Button (Returns to CA view)
-                    Button(action: resetToCalifornia) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.primary)
-                            .frame(width: 50, height: 50)
-                            .background(Color.primary.opacity(0.05))
-                            .cornerRadius(12)
-                    }
-                    .sensoryFeedback(.impact(weight: .light), trigger: locationSearch)
-
-                    // Choose Location Button
-                    Button(action: {
-                        showingLocationPicker = true
-                    }) {
-                        HStack {
-                            Image(systemName: "location.magnifyingglass")
-                            Text(locationSearch.isEmpty ? "Choose Location" : locationSearch)
-                                .fontWeight(.semibold)
-                                .lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(Color.primary.opacity(0.05))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .sensoryFeedback(.impact(weight: .medium), trigger: showingLocationPicker)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 30) // Bottom safe area padding
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: -5)
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
-        }
-        .sheet(isPresented: $showingLocationPicker) {
-            LocationSearchView(searchText: $locationSearch) { coordinate, name in
-                updateMapPosition(to: coordinate, distance: 50_000)
-                locationSearch = name
-            }
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
-        }
-    }
-    
-    private func updateMapPosition(to coordinate: CLLocationCoordinate2D, distance: Double) {
-        withAnimation(.easeInOut(duration: 2.0)) {
-            position = .camera(MapCamera(centerCoordinate: coordinate, distance: distance))
-        }
-    }
-
-    private func resetToCalifornia() {
-        locationSearch = ""
-        updateMapPosition(to: californiaCenter, distance: californiaZoomLevel)
+        Map(position: $position, bounds: mapBounds)
+            .mapStyle(.hybrid(elevation: .realistic))
+            .edgesIgnoringSafeArea(.all)
     }
 }
 
-// MARK: - Search View Component
+// MARK: - Location Search View
+
 struct LocationSearchView: View {
     @Binding var searchText: String
     @Environment(\.dismiss) var dismiss
     var onLocationSelected: (CLLocationCoordinate2D, String) -> Void
-    
+
     @State private var searchResults: [MKMapItem] = []
-    
+
     @AppStorage("recent_places_data") private var recentPlacesData: Data = Data()
-    
+
     private var recentPlaces: [RecentLocation] {
         get {
             (try? JSONDecoder().decode([RecentLocation].self, from: recentPlacesData)) ?? []
@@ -121,7 +58,7 @@ struct LocationSearchView: View {
             }
         }
     }
-    
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -134,7 +71,7 @@ struct LocationSearchView: View {
                     .onChange(of: searchText) { _ in
                         performSearch()
                     }
-                
+
                 List {
                     if !searchText.isEmpty {
                         Section("Search Results") {
@@ -154,7 +91,9 @@ struct LocationSearchView: View {
                     } else {
                         Section {
                             if recentPlaces.isEmpty {
-                                Text("No recent searches").foregroundColor(.secondary).font(.subheadline)
+                                Text("No recent searches")
+                                    .foregroundColor(.secondary)
+                                    .font(.subheadline)
                             } else {
                                 ForEach(recentPlaces) { place in
                                     Button {
@@ -162,7 +101,8 @@ struct LocationSearchView: View {
                                         dismiss()
                                     } label: {
                                         HStack {
-                                            Image(systemName: "clock.arrow.circlepath").foregroundColor(.secondary)
+                                            Image(systemName: "clock.arrow.circlepath")
+                                                .foregroundColor(.secondary)
                                             VStack(alignment: .leading) {
                                                 Text(place.name).font(.headline)
                                                 Text(place.title).font(.caption).foregroundColor(.secondary)
@@ -188,7 +128,7 @@ struct LocationSearchView: View {
             }
         }
     }
-    
+
     private func performSearch() {
         guard !searchText.isEmpty else {
             searchResults = []
@@ -202,7 +142,7 @@ struct LocationSearchView: View {
             self.searchResults = response.mapItems
         }
     }
-    
+
     private func saveToRecents(_ item: MKMapItem) {
         let newPlace = RecentLocation(
             name: item.name ?? "Unknown",
@@ -210,15 +150,15 @@ struct LocationSearchView: View {
             latitude: item.placemark.coordinate.latitude,
             longitude: item.placemark.coordinate.longitude
         )
-        
+
         var current = recentPlaces
         current.removeAll { $0.name == newPlace.name && $0.title == newPlace.title }
         current.insert(newPlace, at: 0)
         if current.count > 5 { current.removeLast() }
-        
+
         recentPlaces = current
     }
-    
+
     private func deleteRecent(at offsets: IndexSet) {
         var current = recentPlaces
         current.remove(atOffsets: offsets)
@@ -226,6 +166,13 @@ struct LocationSearchView: View {
     }
 }
 
+// MARK: - Preview
+
 #Preview {
-    HomeMapView()
+    HomeMapView(position: .constant(.camera(
+        MapCamera(
+            centerCoordinate: CLLocationCoordinate2D(latitude: 37.166, longitude: -119.449),
+            distance: 4_500_000
+        )
+    )))
 }
