@@ -10,7 +10,7 @@ struct ContentView: View {
     @State private var dockMode: DockMode = .idle
     @State private var selectedDateID: UUID?
     @State private var waterData: [WaterData] = []
-    @State private var selectedPersona: String = "Citizen" // Keep selectedPersona, now managed by DataInsightCard
+    @State private var selectedPersona: String = "Citizen"
     
     // Map State
     @State private var position: MapCameraPosition = .camera(
@@ -18,7 +18,7 @@ struct ContentView: View {
     )
     @State private var locationSearch: String = ""
     @State private var showingLocationPicker = false
-    @State private var isLocationSelected = false 
+    @State private var isLocationSelected = false
     
     // Top Card State
     @State private var isTopCardExpanded = false
@@ -40,39 +40,47 @@ struct ContentView: View {
                 )
                 .ignoresSafeArea()
             
-            // 2. NEW: Data Insight Card (Top Center)
-            // It will now cover the top portion and expand when needed
-            VStack {
+            // OPTIONAL: Dimming background when card is expanded for premium look
+            if isTopCardExpanded {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring()) { isTopCardExpanded = false }
+                    }
+                    .transition(.opacity)
+            }
+            
+            // 2. DATA INSIGHT CARD (Top Center)
+            VStack(spacing: 0) {
                 if isLocationSelected {
                     DataInsightCard(
                         isExpanded: $isTopCardExpanded,
-                        selectedPersona: $selectedPersona, // Pass as binding
+                        selectedPersona: $selectedPersona,
                         currentData: currentSelectedData,
                         locationName: locationSearch
                     )
-                    // The card will handle its own top padding and safe area
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    // When expanded, the card should visually overlay more elements
-                    .zIndex(isTopCardExpanded ? 3 : 1) // Higher zIndex when expanded
+                    .padding(.top, isTopCardExpanded ? 70 : 10) // Adjusts for Dynamic Island
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .opacity
+                    ))
                 }
-                Spacer() // Pushes the card to the top
+                Spacer()
             }
-            // Add padding to ensure the card doesn't conflict with safe area or other elements
-            .padding(.top, 10) // Small top padding for the card's container
-            .ignoresSafeArea(edges: isTopCardExpanded ? .top : []) // Card handles its own safe area when expanded
+            // Logic to let card cover top safe area only when expanded
+            .ignoresSafeArea(edges: isTopCardExpanded ? .top : [])
+            .zIndex(isTopCardExpanded ? 10 : 1) // Ensures it stays above the dock when expanded
 
-            // 3. THE FLUID GLASS DOCK (renumbered)
+            // 3. THE FLUID GLASS DOCK
             VStack(spacing: 0) {
                 Spacer()
                 HStack(spacing: 12) {
-                    // Timeline Segment (Slides to expand)
                     TimelineDockSegment(
                         mode: $dockMode,
                         selectedDateID: $selectedDateID,
                         data: waterData
                     )
                     
-                    // Search Segment (Slides to expand)
                     SearchDockSegment(
                         mode: $dockMode,
                         locationSearch: $locationSearch,
@@ -82,8 +90,11 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
+                // Hide dock smoothly when the top card is taking up the whole screen
+                .opacity(isTopCardExpanded ? 0 : 1)
+                .offset(y: isTopCardExpanded ? 100 : 0)
             }
-            .zIndex(2) // Ensure dock is always visible
+            .zIndex(5)
         }
         .sheet(isPresented: $showingLocationPicker) {
             LocationSearchView(searchText: $locationSearch) { coordinate, name in
@@ -92,7 +103,7 @@ struct ContentView: View {
                 }
                 locationSearch = name
                 withAnimation(.spring()) { dockMode = .idle }
-                isLocationSelected = true 
+                isLocationSelected = true
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -112,7 +123,7 @@ struct ContentView: View {
         withAnimation(.easeInOut(duration: 2.0)) {
             position = .camera(MapCamera(centerCoordinate: californiaCenter, distance: californiaZoomLevel))
         }
-        isLocationSelected = false 
+        isLocationSelected = false
         isTopCardExpanded = false
     }
 
@@ -133,7 +144,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Dock Components (Unchanged)
+// MARK: - Dock Components
 
 struct TimelineDockSegment: View {
     @Binding var mode: DockMode
@@ -217,7 +228,6 @@ struct SearchDockSegment: View {
                     .onTapGesture { onSearchTap() }
                 
                 HStack(spacing: 16) {
-                    // RESET BUTTON
                     Button(action: {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         onResetTap()
@@ -228,8 +238,7 @@ struct SearchDockSegment: View {
                     }
                     .buttonStyle(.plain)
 
-                    // CLOSE BUTTON
-                    Button(action: { 
+                    Button(action: {
                         withAnimation(.spring()) { mode = .idle }
                     }) {
                         Image(systemName: "xmark.circle.fill")
@@ -258,12 +267,6 @@ struct SearchDockSegment: View {
         }
     }
 }
-
-// MARK: - Old Sidebar & Persona Views (Removed or modified)
-
-// PersonaTriggerButton and PersonaSidebarView are removed entirely.
-// MetricModule and WarningModule are also removed as their functionality is replaced by DataInsightCard.
-// The personas array is moved into DataInsightCard for persona selection within the card.
 
 #Preview {
     ContentView()

@@ -15,98 +15,83 @@ struct DataInsightCard: View {
     var body: some View {
         VStack(spacing: 0) {
             if let data = currentData {
-                // MARK: - Header (The "Handle" when collapsed)
+                // MARK: - Header (The "Handle")
                 headerView(data: data)
                 
                 if isExpanded {
                     ScrollView(.vertical, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 28) {
+                        VStack(alignment: .leading, spacing: 24) {
                             
-                            // MARK: - Persona Picker
+                            // MARK: - Persona Segmented Picker
                             personaPicker
                             
-                            // MARK: - Awareness Section (Grid Style)
+                            // MARK: - Awareness Grid
                             VStack(alignment: .leading, spacing: 12) {
-                                sectionLabel("Awareness", icon: "eye.fill")
-                                
+                                sectionHeader("Current Awareness", icon: "eye.fill")
                                 HStack(spacing: 12) {
-                                    MetricBox(title: "Snowpack", value: "\(Int(data.snowpack))%", color: data.snowpackStatus.color, icon: "snowflake")
-                                    MetricBox(title: "Precip", value: "\(Int(data.precip))%", color: data.precipitationStatus.color, icon: "cloud.rain.fill")
-                                    MetricBox(title: "Reservoir", value: "\(Int(data.reservoir))%", color: data.reservoirStatus.color, icon: "drop.fill")
+                                    MetricTile(title: "Snowpack", value: "\(Int(data.snowpack))%", status: data.snowpackStatus.description, color: data.snowpackStatus.color, icon: "snowflake")
+                                    MetricTile(title: "Precip", value: "\(Int(data.precip))%", status: data.precipitationStatus.description, color: data.precipitationStatus.color, icon: "cloud.rain.fill")
+                                    MetricTile(title: "Reservoir", value: "\(Int(data.reservoir))%", status: data.reservoirStatus.description, color: data.reservoirStatus.color, icon: "drop.fill")
                                 }
                             }
                             .padding(.horizontal, 20)
 
                             // MARK: - Predictive Outlook
                             VStack(alignment: .leading, spacing: 12) {
-                                sectionLabel("Predictive Outlook", icon: "sparkles")
-                                PredictiveInsightList(data: data, persona: selectedPersona)
+                                sectionHeader("Predictive Outlook", icon: "sparkles")
+                                PredictiveListView(data: data, persona: selectedPersona)
                             }
                             .padding(.horizontal, 20)
 
-                            // MARK: - Warnings
-                            if hasWarnings(data) {
+                            // MARK: - Warnings/Alerts
+                            if hasActiveAlerts(data) {
                                 VStack(alignment: .leading, spacing: 12) {
-                                    sectionLabel("Alerts", icon: "exclamationmark.triangle.fill", color: .orange)
-                                    WarningStack(data: data, persona: selectedPersona)
+                                    sectionHeader("Active Alerts", icon: "exclamationmark.triangle.fill", color: .orange)
+                                    AlertCard(data: data)
                                 }
                                 .padding(.horizontal, 20)
                             }
                             
-                            Spacer(minLength: 100)
+                            Spacer(minLength: 40)
                         }
-                        .padding(.top, 10)
                     }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
         }
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: isExpanded ? 40 : 30, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
-                
-                // Subtle Inner Highlight (Apple Style)
-                RoundedRectangle(cornerRadius: isExpanded ? 40 : 30, style: .continuous)
-                    .strokeBorder(.white.opacity(0.15), lineWidth: 1)
-            }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 36 : 30, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: isExpanded ? 36 : 30, style: .continuous)
+                .stroke(.white.opacity(0.15), lineWidth: 1)
         )
-        .padding(.horizontal, isExpanded ? 10 : 20)
-        .frame(maxHeight: isExpanded ? .infinity : 74)
-        .animation(.spring(response: 0.5, dampingFraction: 0.85), value: isExpanded)
+        .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
+        .padding(.horizontal, isExpanded ? 12 : 20)
+        .frame(maxHeight: isExpanded ? 640 : 74) // Control expansion height
     }
 
-    // MARK: - Helper Views
+    // MARK: - Subviews
     
-    @ViewBuilder
     private func headerView(data: WaterData) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(locationName.isEmpty ? "Select Location" : locationName)
-                    .font(.system(.headline, design: .rounded))
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                
+                Text(locationName.isEmpty ? "Location Insights" : locationName)
+                    .font(.system(.headline, design: .rounded)).fontWeight(.bold)
                 Text(data.monthYear)
-                    .font(.system(.caption, design: .rounded))
-                    .foregroundColor(.white.opacity(0.6))
+                    .font(.system(.caption, design: .rounded)).foregroundColor(.secondary)
             }
-            
             Spacer()
-            
-            // Interaction Prompt
-            Image(systemName: isExpanded ? "chevron.down" : "chevron.up")
-                .font(.system(size: 14, weight: .black))
-                .foregroundColor(.white.opacity(0.4))
-                .padding(8)
-                .background(Circle().fill(.white.opacity(0.1)))
+            Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.secondary, .white.opacity(0.1))
         }
         .padding(.horizontal, 24)
         .frame(height: 74)
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation { isExpanded.toggle() }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                isExpanded.toggle()
+            }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
     }
@@ -117,151 +102,100 @@ struct DataInsightCard: View {
                 let isSelected = selectedPersona == p.name
                 Button {
                     withAnimation(.spring(response: 0.3)) { selectedPersona = p.name }
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } label: {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 4) {
                         Image(systemName: p.icon)
-                            .font(.system(size: 18))
-                        Text(p.name)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                        Text(p.name).font(.system(size: 10, weight: .bold))
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .foregroundColor(isSelected ? .cyan : .white.opacity(0.5))
-                    .background(
-                        ZStack {
-                            if isSelected {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(.white.opacity(0.1))
-                                    .matchedGeometryEffect(id: "personaTab", in: personaNamespace)
-                            }
-                        }
-                    )
+                    .padding(.vertical, 8)
+                    .background(isSelected ? Color.white.opacity(0.15) : Color.clear)
+                    .cornerRadius(12)
+                    .foregroundColor(isSelected ? .cyan : .secondary)
                 }
             }
         }
-        .padding(6)
-        .background(Capsule().fill(.black.opacity(0.1)))
+        .padding(4)
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(16)
         .padding(.horizontal, 20)
     }
-    
-    @Namespace private var personaNamespace
 
-    private func sectionLabel(_ text: String, icon: String, color: Color = .white.opacity(0.4)) -> some View {
+    private func sectionHeader(_ text: String, icon: String, color: Color = .secondary) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: icon)
-            Text(text.uppercased())
+            Image(systemName: icon).font(.caption)
+            Text(text.uppercased()).font(.system(size: 11, weight: .heavy))
         }
-        .font(.system(size: 12, weight: .heavy, design: .rounded))
         .foregroundColor(color)
-        .padding(.leading, 4)
     }
     
-    private func hasWarnings(_ data: WaterData) -> Bool {
-        return data.snowpackStatus == .concerning || data.precipitationStatus == .drought || data.reservoirStatus == .concern
+    private func hasActiveAlerts(_ data: WaterData) -> Bool {
+        data.snowpackStatus == .concerning || data.reservoirStatus == .concern
     }
 }
 
-// MARK: - Sub-Components
+// MARK: - Helper UI Components
 
-struct MetricBox: View {
-    let title: String
-    let value: String
-    let color: Color
-    let icon: String
-
+struct MetricTile: View {
+    let title: String, value: String, status: String, color: Color, icon: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundColor(color)
-            
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon).foregroundColor(color).font(.title3)
             VStack(alignment: .leading, spacing: 0) {
-                Text(value)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                Text(title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.5))
+                Text(value).font(.system(size: 20, weight: .bold, design: .rounded))
+                Text(title).font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 20).fill(.white.opacity(0.05)))
+        .padding(12)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(18)
     }
 }
 
-struct PredictiveInsightList: View {
+struct PredictiveListView: View {
     let data: WaterData
     let persona: String
-    
     var body: some View {
-        VStack(spacing: 12) {
-            InsightRow(icon: "snowflake", title: "Snowpack Outlook", text: snowpackText, color: data.snowpackStatus.color)
-            InsightRow(icon: "cloud.rain", title: "Precipitation Trend", text: precipText, color: data.precipitationStatus.color)
-            InsightRow(icon: "drop.fill", title: "Reservoir Stability", text: reservoirText, color: data.reservoirStatus.color)
+        VStack(spacing: 1) { // Divider effect
+            PredictiveRow(title: "Snowpack Outlook", text: "Immediate action on water conservation is crucial.", color: data.snowpackStatus.color)
+            PredictiveRow(title: "Precipitation Trend", text: "Normal rainfall. No immediate concerns.", color: data.precipitationStatus.color)
+            PredictiveRow(title: "Reservoir Stability", text: "Water supply remains stable for now.", color: data.reservoirStatus.color)
         }
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(20)
     }
-    
-    // Using your existing logic but shortened for UI cleanliness
-    private var snowpackText: String { /* Your existing persona-based switch logic */ "Action on water conservation is crucial." }
-    private var precipText: String { "Normal rainfall. No immediate concerns." }
-    private var reservoirText: String { "Water supply remains stable for now." }
 }
 
-struct InsightRow: View {
-    let icon: String
-    let title: String
-    let text: String
-    let color: Color
-    
+struct PredictiveRow: View {
+    let title: String, text: String, color: Color
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Circle()
-                .fill(color.opacity(0.2))
-                .frame(width: 32, height: 32)
-                .overlay(Image(systemName: icon).font(.system(size: 14)).foregroundColor(color))
-            
+        HStack(spacing: 15) {
+            Circle().fill(color.opacity(0.2)).frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .bold))
+                Text(text).font(.system(size: 12)).foregroundColor(.secondary)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct AlertCard: View {
+    let data: WaterData
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.shield.fill").foregroundColor(.orange).font(.title2)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                Text(text)
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.7))
-                    .fixedSize(horizontal: false, vertical: true)
+                Text("Action Required").font(.system(size: 14, weight: .bold)).foregroundColor(.orange)
+                Text("Snowpack levels are critically low. Mandatory rationing may be implemented.")
+                    .font(.system(size: 12)).foregroundColor(.white.opacity(0.8))
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 20).fill(.white.opacity(0.03)))
-    }
-}
-
-struct WarningStack: View {
-    let data: WaterData
-    let persona: String
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: "exclamationmark.shield.fill")
-                Text("Action Required")
-                    .font(.system(size: 14, weight: .bold))
-            }
-            .foregroundColor(.orange)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 4)
-            
-            Text("Snowpack levels are critically low. Local agencies may implement mandatory rationing soon.")
-                .font(.system(size: 13))
-                .foregroundColor(.white.opacity(0.9))
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color.orange.opacity(0.15))
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.orange.opacity(0.3), lineWidth: 1))
-        )
+        .background(Color.orange.opacity(0.15))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+        .cornerRadius(20)
     }
 }
