@@ -1,152 +1,269 @@
 import SwiftUI
 import MapKit
 
+enum DockMode {
+    case idle, timeline, search
+}
+
+// MARK: - Main View
 struct ContentView: View {
+    @State private var dockMode: DockMode = .idle
     @State private var selectedDateID: UUID?
     @State private var waterData: [WaterData] = []
-
-    // Map state lifted up from HomeMapView
+    @State private var selectedPersona: String = "Citizen" // Keep selectedPersona, now managed by DataInsightCard
+    
+    // Map State
     @State private var position: MapCameraPosition = .camera(
-        MapCamera(
-            centerCoordinate: CLLocationCoordinate2D(latitude: 37.166, longitude: -119.449),
-            distance: 4_500_000
-        )
+        MapCamera(centerCoordinate: CLLocationCoordinate2D(latitude: 37.166, longitude: -119.449), distance: 4_500_000)
     )
-    @State private var showingLocationPicker = false
     @State private var locationSearch: String = ""
+    @State private var showingLocationPicker = false
+    @State private var isLocationSelected = false 
+    
+    // Top Card State
+    @State private var isTopCardExpanded = false
 
+    // Map Consts
     private let californiaCenter = CLLocationCoordinate2D(latitude: 37.166, longitude: -119.449)
     private let californiaZoomLevel: Double = 4_500_000
-
+    
     var body: some View {
         ZStack(alignment: .bottom) {
-            // 1. Black base
-            Color.black
-                .ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
-            // 2. Map — masked, knows nothing about controls
+            // 1. MAP LAYER
             HomeMapView(position: $position)
                 .mask(
                     Rectangle()
-                        .padding(40)
-                        .blur(radius: 40)
+                        .padding(dockMode == .idle ? 0 : 30)
+                        .blur(radius: dockMode == .idle ? 0 : 40)
                 )
                 .ignoresSafeArea()
-
-            // 3. Glass control bar — above the mask, below the pill
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Button(action: resetToCalifornia) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.primary)
-                            .frame(width: 50, height: 50)
-                            .background(Color.primary.opacity(0.05))
-                            .cornerRadius(12)
-                    }
-                    .sensoryFeedback(.impact(weight: .light), trigger: locationSearch)
-
-                    Button(action: { showingLocationPicker = true }) {
-                        HStack {
-                            Image(systemName: "location.magnifyingglass")
-                            Text(locationSearch.isEmpty ? "Choose Location" : locationSearch)
-                                .fontWeight(.semibold)
-                                .lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(Color.primary.opacity(0.05))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .sensoryFeedback(.impact(weight: .medium), trigger: showingLocationPicker)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-                .padding(.bottom, 30)
-            }
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: -5)
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
-
-            // 4. Timeline Pill — topmost layer
+            
+            // 2. NEW: Data Insight Card (Top Center)
+            // It will now cover the top portion and expand when needed
             VStack {
-                Spacer()
-                TimelinePillView(selectedDateID: $selectedDateID, data: waterData)
-                    .padding(.bottom, 130) // Sits above the glass bar
+                if isLocationSelected {
+                    DataInsightCard(
+                        isExpanded: $isTopCardExpanded,
+                        selectedPersona: $selectedPersona, // Pass as binding
+                        currentData: currentSelectedData,
+                        locationName: locationSearch
+                    )
+                    // The card will handle its own top padding and safe area
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    // When expanded, the card should visually overlay more elements
+                    .zIndex(isTopCardExpanded ? 3 : 1) // Higher zIndex when expanded
+                }
+                Spacer() // Pushes the card to the top
             }
+            // Add padding to ensure the card doesn't conflict with safe area or other elements
+            .padding(.top, 10) // Small top padding for the card's container
+            .ignoresSafeArea(edges: isTopCardExpanded ? .top : []) // Card handles its own safe area when expanded
+
+            // 3. THE FLUID GLASS DOCK (renumbered)
+            VStack(spacing: 0) {
+                Spacer()
+                HStack(spacing: 12) {
+                    // Timeline Segment (Slides to expand)
+                    TimelineDockSegment(
+                        mode: $dockMode,
+                        selectedDateID: $selectedDateID,
+                        data: waterData
+                    )
+                    
+                    // Search Segment (Slides to expand)
+                    SearchDockSegment(
+                        mode: $dockMode,
+                        locationSearch: $locationSearch,
+                        onSearchTap: { showingLocationPicker = true },
+                        onResetTap: resetToCalifornia
+                    )
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
+            .zIndex(2) // Ensure dock is always visible
         }
         .sheet(isPresented: $showingLocationPicker) {
             LocationSearchView(searchText: $locationSearch) { coordinate, name in
-                updateMapPosition(to: coordinate, distance: 50_000)
+                withAnimation(.easeInOut(duration: 2.0)) {
+                    position = .camera(MapCamera(centerCoordinate: coordinate, distance: 50_000))
+                }
                 locationSearch = name
+                withAnimation(.spring()) { dockMode = .idle }
+                isLocationSelected = true 
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
         .onAppear {
             waterData = loadCSVData()
-            if selectedDateID == nil {
-                selectedDateID = waterData.last?.id
-            }
+            if selectedDateID == nil { selectedDateID = waterData.last?.id }
         }
     }
-
-    // MARK: - Map Helpers
-
-    private func updateMapPosition(to coordinate: CLLocationCoordinate2D, distance: Double) {
-        withAnimation(.easeInOut(duration: 2.0)) {
-            position = .camera(MapCamera(centerCoordinate: coordinate, distance: distance))
-        }
+    
+    var currentSelectedData: WaterData? {
+        waterData.first(where: { $0.id == selectedDateID })
     }
 
     private func resetToCalifornia() {
         locationSearch = ""
-        updateMapPosition(to: californiaCenter, distance: californiaZoomLevel)
+        withAnimation(.easeInOut(duration: 2.0)) {
+            position = .camera(MapCamera(centerCoordinate: californiaCenter, distance: californiaZoomLevel))
+        }
+        isLocationSelected = false 
+        isTopCardExpanded = false
     }
 
-    // MARK: - CSV Parser
-
+    // MARK: - CSV Loading
     func loadCSVData() -> [WaterData] {
         guard let url = Bundle.main.url(forResource: "H2O Hackathon Challenge", withExtension: "csv"),
-              let rawCSV = try? String(contentsOf: url) else {
-            print("❌ Error: Could not find or read 'H2O Hackathon Challenge.csv'. Ensure Target Membership is checked.")
-            return []
-        }
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "M/d/yy"
-
-        let outputFormatter = DateFormatter()
-        outputFormatter.dateFormat = "MMM ''yy"
-
+              let rawCSV = try? String(contentsOf: url) else { return [] }
+        let dateFormatter = DateFormatter(); dateFormatter.dateFormat = "M/d/yy"
+        let outputFormatter = DateFormatter(); outputFormatter.dateFormat = "MMM ''yy"
         var lines = rawCSV.components(separatedBy: .newlines)
-        if lines.first?.lowercased().contains("date") == true {
-            lines.removeFirst()
-        }
-
-        let parsedData = lines.compactMap { line -> WaterData? in
-            let columns = line.components(separatedBy: ",")
-            guard columns.count >= 4,
-                  let date = dateFormatter.date(from: columns[0]),
-                  let snow = Double(columns[1]),
-                  let precip = Double(columns[2]),
-                  let res = Double(columns[3]) else { return nil }
-
-            return WaterData(
-                dateString: columns[0],
-                monthYear: outputFormatter.string(from: date),
-                snowpack: snow,
-                precip: precip,
-                reservoir: res
-            )
-        }
-
-        return parsedData.reversed()
+        if lines.first?.lowercased().contains("date") == true { lines.removeFirst() }
+        return lines.compactMap { line -> WaterData? in
+            let cols = line.components(separatedBy: ",")
+            guard cols.count >= 4, let date = dateFormatter.date(from: cols[0]),
+                  let snow = Double(cols[1]), let precip = Double(cols[2]), let res = Double(cols[3]) else { return nil }
+            return WaterData(dateString: cols[0], monthYear: outputFormatter.string(from: date), snowpack: snow, precip: precip, reservoir: res)
+        }.reversed()
     }
 }
+
+// MARK: - Dock Components (Unchanged)
+
+struct TimelineDockSegment: View {
+    @Binding var mode: DockMode
+    @Binding var selectedDateID: UUID?
+    let data: [WaterData]
+    
+    var isExpanded: Bool { mode == .timeline }
+
+    var body: some View {
+        ZStack {
+            if isExpanded {
+                VStack(spacing: 0) {
+                    Text(data.first(where: { $0.id == selectedDateID })?.monthYear ?? "")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(alignment: .bottom, spacing: 6) {
+                            ForEach(data) { item in
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(selectedDateID == item.id ? Color.cyan : Color.white.opacity(0.35))
+                                    .frame(width: 4, height: item.normalizedTickHeight)
+                                    .id(item.id)
+                                    .onTapGesture {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            selectedDateID = item.id
+                                        }
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    }
+                            }
+                        }
+                        .scrollTargetLayout()
+                    }
+                    .scrollPosition(id: $selectedDateID)
+                    .contentMargins(.horizontal, 120, for: .scrollContent)
+                    .frame(height: 40)
+                }
+                .transition(.opacity.combined(with: .scale(0.95)))
+            } else {
+                Image(systemName: "calendar")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+            }
+        }
+        .frame(width: isExpanded ? 280 : 70, height: 60)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(0.25), lineWidth: 0.5)
+        )
+        .onTapGesture {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                mode = (mode == .timeline) ? .idle : .timeline
+            }
+        }
+    }
+}
+
+struct SearchDockSegment: View {
+    @Binding var mode: DockMode
+    @Binding var locationSearch: String
+    var onSearchTap: () -> Void
+    var onResetTap: () -> Void
+    
+    var isExpanded: Bool { mode == .search }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Image(systemName: "location.magnifyingglass")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.leading, isExpanded ? 20 : 0)
+            
+            if isExpanded {
+                Text(locationSearch.isEmpty ? "Search California..." : locationSearch)
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 10)
+                    .onTapGesture { onSearchTap() }
+                
+                HStack(spacing: 16) {
+                    // RESET BUTTON
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        onResetTap()
+                    }) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+
+                    // CLOSE BUTTON
+                    Button(action: { 
+                        withAnimation(.spring()) { mode = .idle }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.trailing, 20)
+            }
+        }
+        .frame(maxWidth: isExpanded ? .infinity : 70)
+        .frame(height: 60)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(0.25), lineWidth: 0.5)
+        )
+        .onTapGesture {
+            if !isExpanded {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    mode = .search
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Old Sidebar & Persona Views (Removed or modified)
+
+// PersonaTriggerButton and PersonaSidebarView are removed entirely.
+// MetricModule and WarningModule are also removed as their functionality is replaced by DataInsightCard.
+// The personas array is moved into DataInsightCard for persona selection within the card.
 
 #Preview {
     ContentView()
