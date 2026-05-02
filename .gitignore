@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+
+# Environment files
+.env
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.python-version
+.mypy_cache/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Databases / logs
+*.sqlite3
+*.db
+*.log
+.coverage
+
+# Model artifacts
+models/*.pkl
+model/*.pkl
+
+# Virtualenvs and build
+/venv/
+env/
+.venv/
+pip-wheel-metadata/
+build/
+dist/
+*.egg-info/
+
+# Misc
+analysis.ipynb
+
